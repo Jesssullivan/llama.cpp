@@ -64,7 +64,9 @@ size_t ggml_backend_buft_get_alloc_size(ggml_backend_buffer_type_t buft, const s
     // get_alloc_size is optional, defaults to ggml_nbytes
     if (buft->iface.get_alloc_size) {
         size_t size = buft->iface.get_alloc_size(buft, tensor);
-        assert(size >= ggml_nbytes(tensor));
+        // a buffer type must never report less than ggml_nbytes - the check below already
+        // evaluates ggml_nbytes(), so this is free in release builds
+        GGML_ASSERT(size >= ggml_nbytes(tensor));
 
         // [TAG_ALLOC_SIZE_EXPAND]
         // if you hit this assert, update ggml_backend_op_alloc_size_may_expand() accordingly
