@@ -716,6 +716,14 @@ void process_shaders() {
             fa_base_dict["ACC_TYPE"] = fp16 && f16acc ? "float16_t" : "float";
             fa_base_dict["ACC_TYPEV2"] = fp16 && f16acc ? "f16vec2" : "vec2";
             fa_base_dict["ACC_TYPEV4"] = fp16 && f16acc ? "f16vec4" : "vec4";
+            // Scalar and coopmat1: the output accumulator (P*V and its online-softmax
+            // rescaling) follows the requested accumulator precision, so the f32acc
+            // variant widens it too. Operands (Q, K, V, P) keep FLOAT_TYPE. coopmat2 is
+            // not given O_TYPE and keeps its fp16 output accumulator (see #19376).
+            const std::map<std::string, std::string> fa_o_acc_dict = {
+                {"O_TYPE",   fp16 && f16acc ? "float16_t" : "float"},
+                {"O_TYPEV4", fp16 && f16acc ? "f16vec4"   : "vec4"},
+            };
             // Compile IQ4_NL support into all FA variants so its shared LUT is available when K or V uses it.
             fa_base_dict["DATA_A_IQ4_NL"] = "1";
             if (fp16 && f16acc) {
@@ -730,21 +738,21 @@ void process_shaders() {
 
 #if defined(GGML_VULKAN_COOPMAT_GLSLC_SUPPORT)
                 string_to_spv("flash_attn_f32_f16", "flash_attn_cm1.comp",
-                    merge_maps(fa_base_dict, {{"Q_TYPE", "float"}, {"D_TYPE", "float"}, {"D_TYPEV4", "vec4"}, {"COOPMAT", "1"}}), fp16, true, false, f16acc);
+                    merge_maps(merge_maps(fa_base_dict, fa_o_acc_dict), {{"Q_TYPE", "float"}, {"D_TYPE", "float"}, {"D_TYPEV4", "vec4"}, {"COOPMAT", "1"}}), fp16, true, false, f16acc);
 #endif
             }
 
             string_to_spv("flash_attn_f32_f16", "flash_attn.comp",
-                merge_maps(fa_base_dict, {{"Q_TYPE", "float"}, {"D_TYPE", "float"}, {"D_TYPEV4", "vec4"}}), fp16, false, false, f16acc);
+                merge_maps(merge_maps(fa_base_dict, fa_o_acc_dict), {{"Q_TYPE", "float"}, {"D_TYPE", "float"}, {"D_TYPEV4", "vec4"}}), fp16, false, false, f16acc);
 
             if (fp16) {
                 string_to_spv("flash_attn_f32_f16_dot2", "flash_attn.comp",
-                    merge_maps(fa_base_dict, {{"Q_TYPE", "float"}, {"D_TYPE", "float"}, {"D_TYPEV4", "vec4"}, {"DOT2_F16", "1"}}), fp16, false, false, f16acc);
+                    merge_maps(merge_maps(fa_base_dict, fa_o_acc_dict), {{"Q_TYPE", "float"}, {"D_TYPE", "float"}, {"D_TYPEV4", "vec4"}, {"DOT2_F16", "1"}}), fp16, false, false, f16acc);
             }
 
 #if defined(GGML_VULKAN_INTEGER_DOT_GLSLC_SUPPORT)
             string_to_spv("flash_attn_f32_f16", "flash_attn.comp",
-                merge_maps(fa_base_dict, {{"Q_TYPE", "float"}, {"D_TYPE", "float"}, {"D_TYPEV4", "vec4"}, {"MMQ", "1"}, {"FA_MMQ_MIXED", "1"}}), fp16, false, false, f16acc, "_int8");
+                merge_maps(merge_maps(fa_base_dict, fa_o_acc_dict), {{"Q_TYPE", "float"}, {"D_TYPE", "float"}, {"D_TYPEV4", "vec4"}, {"MMQ", "1"}, {"FA_MMQ_MIXED", "1"}}), fp16, false, false, f16acc, "_int8");
 #endif
         }
     }

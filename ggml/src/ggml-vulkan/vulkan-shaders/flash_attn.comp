@@ -45,7 +45,7 @@ layout (binding = 3) readonly buffer M {float16_t data_m[];};
 // If SubGroupSize is set to 0 then only use shmem reductions
 const uint32_t tmpsh_size = (SubGroupSize > 0) ? (row_split == 1 ? num_subgroups * D_split : num_subgroups) : WorkGroupSize;
 shared float tmpsh[tmpsh_size];
-shared FLOAT_TYPEV4 tmpshv4[tmpsh_size];
+shared O_TYPEV4 tmpshv4[tmpsh_size];
 
 const uint32_t masksh_stride = Br + 1;
 shared FLOAT_TYPE masksh[Bc * masksh_stride];
@@ -150,10 +150,10 @@ void main() {
     }
     barrier();
 
-    FLOAT_TYPEV4 Of[rows_per_thread][HSV_per_thread / 4];
+    O_TYPEV4 Of[rows_per_thread][HSV_per_thread / 4];
     [[unroll]] for (uint32_t d = 0; d < HSV_per_thread / 4; ++d) {
         [[unroll]] for (uint32_t r = 0; r < rows_per_thread; ++r) {
-            Of[r][d] = FLOAT_TYPEV4(0.0);
+            Of[r][d] = O_TYPEV4(0.0);
         }
     }
 
@@ -485,7 +485,7 @@ void main() {
 
         [[unroll]] for (uint32_t d = 0; d < HSV_per_thread / 4; ++d) {
             [[unroll]] for (uint32_t r = 0; r < rows_per_thread; ++r) {
-                Of[r][d] = FLOAT_TYPE(eMf[r]) * Of[r][d];
+                Of[r][d] = O_TYPE(eMf[r]) * Of[r][d];
             }
         }
 
@@ -540,7 +540,7 @@ void main() {
                     Vf = FLOAT_TYPEV4(data_vv4[v_offset / 4 + vcol * v_stride / 4 + d * D_split + d_tid]);
                 }
                 [[unroll]] for (uint32_t r = 0; r < rows_per_thread; ++r) {
-                    Of[r][d] += FLOAT_TYPEV4(Pf[r] * Vf);
+                    Of[r][d] += O_TYPEV4(Pf[r] * Vf);
                 }
             }
         }
@@ -722,7 +722,7 @@ void main() {
                 ms = exp(Mf[r] - sink);
 
                 [[unroll]] for (uint32_t d = 0; d < HSV_per_thread / 4; ++d) {
-                    Of[r][d] *= FLOAT_TYPE(ms);
+                    Of[r][d] *= O_TYPE(ms);
                 }
             } else {
                 vs = exp(sink - Mf[r]);
@@ -739,9 +739,10 @@ void main() {
 
     [[unroll]] for (uint32_t d = 0; d < HSV_per_thread / 4; ++d) {
         [[unroll]] for (uint32_t r = 0; r < rows_per_thread; ++r) {
-            Of[r][d] *= FLOAT_TYPE(Lfrcp[r]);
-#if defined(FLOAT_TYPE_MAX)
-            Of[r][d] = clamp(Of[r][d], -FLOAT_TYPE_MAX, FLOAT_TYPE_MAX);
+            Of[r][d] *= O_TYPE(Lfrcp[r]);
+#if defined(ACC_TYPE_MAX)
+            // O_TYPE is float16_t only in the f16acc variant, where ACC_TYPE_MAX is defined
+            Of[r][d] = clamp(Of[r][d], -ACC_TYPE_MAX, ACC_TYPE_MAX);
 #endif
         }
     }

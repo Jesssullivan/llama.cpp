@@ -7678,7 +7678,6 @@ void ggml_vk_mul_mat_id(ggml_backend_vk_context * ctx, vk_context& subctx, const
 }
 
 bool ggml_vk_flash_attn_scalar_shmem_support(const vk_device& device, const vk_fa_tuning_params& params, uint32_t hsk, uint32_t hsv, bool f32acc, ggml_type k_type, ggml_type v_type) {
-    GGML_UNUSED(f32acc);
     // Needs to be kept up to date on shader changes
     const uint32_t wg_size = params.workgroup_size;
     const uint32_t Br = params.block_rows;
@@ -7686,12 +7685,14 @@ bool ggml_vk_flash_attn_scalar_shmem_support(const vk_device& device, const vk_f
 
     // BF16 uses the fp32 shader (FLOAT_TYPE=float)
     const uint32_t float_type_size = (device->fp16 && k_type != GGML_TYPE_BF16) ? sizeof(ggml_fp16_t) : sizeof(float);
+    // The output accumulator (O_TYPE) is f32 in the f32acc variant
+    const uint32_t o_type_size = f32acc ? sizeof(float) : float_type_size;
 
     const bool mmq = ggml_vk_fa_scalar_uses_mmq(device, k_type, v_type);
 
     // tmpsh is overestimated slightly
     const uint32_t tmpsh = wg_size * sizeof(float);
-    const uint32_t tmpshv4 = wg_size * 4 * float_type_size;
+    const uint32_t tmpshv4 = wg_size * 4 * o_type_size;
 
     const uint32_t masksh = Bc * (Br + 1) * float_type_size;
     // DATA_A_IQ4_NL is compiled into the FA shaders unconditionally, so its shared table is always allocated.
@@ -7761,8 +7762,9 @@ bool ggml_vk_flash_attn_coopmat_shmem_support(const vk_device& device, const vk_
     const uint32_t vsh_stride = MatBc / 4 * row_split;
     const uint32_t ksh = ((kvshstride >= vsh_stride) ? (Bc * kvshstride) : (Bc * vsh_stride)) * f16vec4;
 
-    // BF16 PVMat accumulator is f32 (no bf16 accumulator support), so pvsh is vec4 (16 bytes)
-    const uint32_t pvsh_elem_size = (k_type == GGML_TYPE_BF16) ? 16u : f16vec4;
+    // PVMat accumulates in O_TYPE: f32 for the f32acc variant and for BF16 (no bf16
+    // accumulator support), so pvsh is vec4 (16 bytes) in those cases
+    const uint32_t pvsh_elem_size = (f32acc || k_type == GGML_TYPE_BF16) ? 16u : f16vec4;
     const uint32_t osh_stride = params.row_split * MatBr / 4;
     const uint32_t pvsh = MatBc * osh_stride * pvsh_elem_size;
 

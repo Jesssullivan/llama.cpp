@@ -94,12 +94,17 @@ layout (binding = 7) readonly buffer SP {int32_t data_sparse[];};
 
 #include "fa_types.glsl"
 
+// vulkan-shaders-gen sets O_TYPE for the scalar and coopmat1 shaders (float in
+// the f32acc variants, float16_t for f16acc); coopmat2 and any shader built
+// without it take these fallbacks.
+#if !defined(O_TYPE)
 #if defined(BFLOAT16)
 #define O_TYPE float
 #define O_TYPEV4 vec4
 #else
 #define O_TYPE FLOAT_TYPE
 #define O_TYPEV4 FLOAT_TYPEV4
+#endif
 #endif
 
 // These can't be `const` globals because GLSL forbids function calls in global

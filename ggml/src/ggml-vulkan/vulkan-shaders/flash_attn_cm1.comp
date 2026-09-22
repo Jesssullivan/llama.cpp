@@ -629,8 +629,9 @@ void main() {
         const uint d_local = d0 / threads_per_rowgroup;
         [[unroll]] for (uint32_t r = 0; r < rows_per_thread; ++r) {
             Of[r][d_local] *= O_TYPE(Lfrcp[r]);
-#if defined(FLOAT_TYPE_MAX)
-            Of[r][d_local] = clamp(Of[r][d_local], -FLOAT_TYPE_MAX, FLOAT_TYPE_MAX);
+#if defined(ACC_TYPE_MAX)
+            // O_TYPE is float16_t only in the f16acc variant, where ACC_TYPE_MAX is defined
+            Of[r][d_local] = clamp(Of[r][d_local], -ACC_TYPE_MAX, ACC_TYPE_MAX);
 #endif
         }
     }
