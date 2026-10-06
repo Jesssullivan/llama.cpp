@@ -5116,6 +5116,15 @@ struct test_mul_mat : public test_case {
     }
 };
 
+struct test_mul_mat_small_tail : public test_mul_mat {
+    test_mul_mat_small_tail(ggml_type type_a, int64_t n, int64_t k)
+        : test_mul_mat(type_a, GGML_TYPE_F32, 128, n, k, {1, 1}, {1, 1}) {}
+
+    std::string vars() override {
+        return test_mul_mat::vars() + ",tail=dense_small_v1";
+    }
+};
+
 // GGML_HINT_SRC0_IS_HADAMARD
 struct test_mul_mat_hadamard : public test_mul_mat {
     test_mul_mat_hadamard(ggml_type type_a = GGML_TYPE_F32, ggml_type type_b = GGML_TYPE_F32,
@@ -5317,6 +5326,39 @@ struct test_mul_mat_id : public test_case {
 
     void reinit_perf_iter(ggml_context * ctx) override {
         init_mul_mat_id_ids(ctx, n_mats);
+    }
+};
+
+struct test_mul_mat_id_sparse_last : public test_mul_mat_id {
+    test_mul_mat_id_sparse_last(ggml_type type_a, bool b, int64_t n, int64_t k)
+        : test_mul_mat_id(type_a, GGML_TYPE_F32, 9, 8, b, 128, n, k) {}
+
+    std::string vars() override {
+        return test_mul_mat_id::vars() + ",routing=sparse_last_v1";
+    }
+
+    void initialize_tensors(ggml_context * ctx) override {
+        test_mul_mat_id::initialize_tensors(ctx);
+        reinit_perf_iter(ctx);
+    }
+
+    void reinit_perf_iter(ggml_context * ctx) override {
+        for (ggml_tensor * t = ggml_get_first_tensor(ctx); t != NULL; t = ggml_get_next_tensor(ctx, t)) {
+            if (t->type != GGML_TYPE_I32 || ggml_is_view_op(t->op)) {
+                continue;
+            }
+            GGML_ASSERT(t->ne[0] == n_mats && ggml_nrows(t) == n);
+            for (int64_t r = 0; r < n; r++) {
+                std::vector<int32_t> data(n_mats);
+                for (int i = 0; i < n_mats; i++) {
+                    data[i] = i;
+                }
+                if (r == n - 1) {
+                    std::swap(data[n_used - 1], data[n_mats - 1]);
+                }
+                ggml_backend_tensor_set(t, data.data(), r * t->nb[1], data.size() * sizeof(int32_t));
+            }
+        }
     }
 };
 
@@ -10646,6 +10688,19 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
         test_cases.emplace_back(new test_mul_mat_id(GGML_TYPE_F16, GGML_TYPE_F32, 16, 16, b, 50, 200, 64));
         test_cases.emplace_back(new test_mul_mat_id(GGML_TYPE_BF16, GGML_TYPE_F32, 16, 16, b, 32, 1024, 16));
         test_cases.emplace_back(new test_mul_mat_id(GGML_TYPE_BF16, GGML_TYPE_F32, 16, 16, b, 50, 200, 64));
+    }
+
+    for (ggml_type type_a : {GGML_TYPE_Q4_K, GGML_TYPE_Q6_K}) {
+        for (int64_t k : {512, 2048}) {
+            for (int64_t n : {5, 8, 15, 16, 17, 31, 32}) {
+                for (bool b : {false, true}) {
+                    test_cases.emplace_back(new test_mul_mat_id_sparse_last(type_a, b, n, k));
+                }
+            }
+            for (int64_t n : {9, 15}) {
+                test_cases.emplace_back(new test_mul_mat_small_tail(type_a, n, k));
+            }
+        }
     }
 
     // For issue 27873

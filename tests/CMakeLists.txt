@@ -355,6 +355,12 @@ if (NOT LLAMA_USE_SYSTEM_GGML)
 
     # Needs non-public ggml{,-backend}-impl.h
     llama_build_and_test(test-alloc.cpp)
+    find_package(Python3 COMPONENTS Interpreter QUIET)
+    if (Python3_Interpreter_FOUND)
+        llama_test_cmd(${Python3_EXECUTABLE} NAME test-mmq-bounds LABEL python
+            ARGS ${CMAKE_CURRENT_SOURCE_DIR}/test-mmq-bounds.py --cxx ${CMAKE_CXX_COMPILER}
+                 --build-dir ${CMAKE_CURRENT_BINARY_DIR}/test-mmq-bounds)
+    endif()
 endif()
 
 llama_build(test-export-graph-ops.cpp)
