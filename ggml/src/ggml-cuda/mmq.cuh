@@ -380,6 +380,18 @@ static __host__ int ggml_cuda_mmq_get_J_max(const ggml_type type, const bool fal
     return ret;
 }
 
+static __host__ size_t ggml_cuda_mmq_get_y_padding(const ggml_type type, const bool fallback, const int cc, const ggml_prec prec_src1) {
+    size_t padding = 0;
+    for (int J = 8; J <= 128; J += 8) {
+        const ggml_cuda_mmq_config config = ggml_cuda_mmq_get_config(type, J, fallback, cc, prec_src1);
+        if (config.type != GGML_TYPE_COUNT) {
+            const size_t load_bytes = GGML_PAD(config.J * MMQ_TILE_Y_K, config.nthreads) * sizeof(int);
+            padding = std::max(padding, load_bytes);
+        }
+    }
+    return padding;
+}
+
 static constexpr __device__ int ggml_cuda_mmq_get_rows_per_warp(ggml_type type, int J, bool fallback) {
     return ggml_cuda_mmq_get_config(type, J, fallback).rows_per_warp();
 }
@@ -1042,7 +1054,7 @@ static __global__ void mul_mat_q(
                     break;
                 }
 
-                ids_dst_shared[j] = ids_dst[col_low + jt*J + j];
+                ids_dst_shared[j] = j < col_diff - jt*J ? ids_dst[col_low + jt*J + j] : 0;
             }
             __syncthreads();
         }
@@ -1136,7 +1148,7 @@ static __global__ void mul_mat_q(
                     break;
                 }
 
-                ids_dst_shared[j] = ids_dst[col_low + jt*J + j];
+                ids_dst_shared[j] = j < col_diff - jt*J ? ids_dst[col_low + jt*J + j] : 0;
             }
             __syncthreads();
         }
@@ -1358,7 +1370,7 @@ static __global__ void mul_mat_q_stream_k_fixup(
     const int col_diff = col_high - col_low;
 
     for (int j = threadIdx.y*warp_size + threadIdx.x; j < J; j += nwarps*warp_size) {
-        ids_dst_shared[j] = ids_dst[col_low + jt*J + j];
+        ids_dst_shared[j] = j < col_diff - jt*J ? ids_dst[col_low + jt*J + j] : 0;
     }
     __syncthreads();
 
