@@ -95,10 +95,13 @@ static void test(void) {
         common_params base;
         base.n_parallel = 4;
         base.n_outputs_max_per_seq = 8;
+        base.moe_cache_size = 1024 * 1024;
 
         const auto draft = common_base_params_to_speculative(base);
         assert(draft.n_outputs_max == 4);
         assert(draft.n_outputs_max_per_seq == 1);
+        assert(draft.moe_cache_size == 0);
+        assert(base.moe_cache_size == 1024 * 1024);
     }
 
     printf("test-arg-parser: make sure there is no duplicated arguments in any examples\n\n");
@@ -171,6 +174,28 @@ static void test(void) {
     };
 
     std::vector<std::string> argv;
+
+    {
+        common_params cache_params;
+        assert(cache_params.moe_cache_size == 0);
+
+        const int values[] = {0, 1, 1024, 4095, 4096, 4097, 8192, std::numeric_limits<int>::max()};
+        constexpr size_t mib = 1024 * 1024;
+        for (const int value : values) {
+            argv = {"binary_name", "-m", "model_file.gguf", "--moe-cache-mib", std::to_string(value)};
+            const bool fits = (size_t) value <= std::numeric_limits<size_t>::max() / mib;
+            assert(fits == common_params_parse(argv.size(), list_str_to_char(argv).data(), cache_params, LLAMA_EXAMPLE_COMMON));
+            if (fits) {
+                assert(cache_params.moe_cache_size == (size_t) value * mib);
+            }
+        }
+
+        const char * invalid_values[] = {"-1", "hello", "1x", "1.5", "2147483648"};
+        for (const char * value : invalid_values) {
+            argv = {"binary_name", "-m", "model_file.gguf", "--moe-cache-mib", value};
+            assert(false == common_params_parse(argv.size(), list_str_to_char(argv).data(), cache_params, LLAMA_EXAMPLE_COMMON));
+        }
+    }
 
     printf("test-arg-parser: test invalid usage\n\n");
 

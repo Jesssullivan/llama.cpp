@@ -317,6 +317,15 @@ extern "C" {
     //
     typedef bool (*ggml_backend_sched_eval_callback)(struct ggml_tensor * t, bool ask, void * user_data);
 
+    // MoE expert cache callbacks (set with ggml_backend_sched_set_moe_cache)
+    // resolve: return true if the MUL_MAT_ID node should read its host experts from the cache on backend, and the cache tensor to use instead
+    // begin: called once before each graph compute after prior work on the cache backend has finished
+    // prepare: upload the missing experts and return the cache slot of each id; arrays must stay valid until the next begin or scheduler synchronization
+    // Nodes in one split with the same ids tensor share one prepare call and mapping; prepare must fill all their cached weight tensors
+    typedef bool (*ggml_backend_sched_moe_cache_resolve_callback)(void * user_data, const struct ggml_tensor * node, ggml_backend_t backend, struct ggml_tensor ** cached_weight, void ** cache_entry);
+    typedef void (*ggml_backend_sched_moe_cache_begin_callback)(void * user_data);
+    typedef bool (*ggml_backend_sched_moe_cache_prepare_callback)(void * user_data, void * cache_entry, const int32_t * ids, size_t n_ids, const int32_t ** remapped_ids);
+
     // Initialize a backend scheduler, backends with low index are given priority over backends with high index
     GGML_API ggml_backend_sched_t ggml_backend_sched_new(ggml_backend_t * backends, ggml_backend_buffer_type_t * bufts, int n_backends, size_t graph_size, bool parallel, bool op_offload);
     GGML_API void                 ggml_backend_sched_free(ggml_backend_sched_t sched);
@@ -354,6 +363,18 @@ extern "C" {
 
     // Set a callback to be called for each resulting node during graph compute
     GGML_API void                 ggml_backend_sched_set_eval_callback(ggml_backend_sched_t sched, ggml_backend_sched_eval_callback callback, void * user_data);
+
+    // Run MUL_MAT_ID ops with host expert weights on backend, reading the experts from a persistent cache.
+    // Set, replace, or disable only after reset and before graph splitting/allocation; this call synchronizes prior work.
+    // Discard the previous graph's tensors after reset. Cached weights and callback state must live through synchronization.
+    // Automatic placement keeps repeated host weights on their host backend; manually assigned backends take precedence.
+    GGML_API void                 ggml_backend_sched_set_moe_cache(
+            ggml_backend_sched_t                          sched,
+            ggml_backend_t                                backend,
+            ggml_backend_sched_moe_cache_resolve_callback resolve,
+            ggml_backend_sched_moe_cache_begin_callback   begin,
+            ggml_backend_sched_moe_cache_prepare_callback prepare,
+            void *                                        user_data);
 
     //
     // Meta backend

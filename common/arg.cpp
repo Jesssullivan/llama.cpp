@@ -2774,6 +2774,20 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
         }
     ).set_env("LLAMA_ARG_N_CPU_MOE"));
     add_opt(common_arg(
+        {"--moe-cache-mib"}, "N",
+        "GPU cache size in MiB for the MoE experts kept in the CPU (default: 0, disabled)",
+        [](common_params & params, const std::string & value) {
+            const std::string text = string_strip(value);
+            size_t pos = 0;
+            const int amount = std::stoi(text, &pos);
+            constexpr size_t mib = 1024 * 1024;
+            if (pos != text.size() || amount < 0 || (size_t) amount > SIZE_MAX / mib) {
+                throw std::invalid_argument("invalid value");
+            }
+            params.moe_cache_size = (size_t) amount * mib;
+        }
+    ).set_env("LLAMA_ARG_MOE_CACHE_MIB"));
+    add_opt(common_arg(
         {"-ncffn", "--n-cpu-ffn"}, "N",
         "keep the dense FFN weights of the first N layers in the CPU\n"
         "(dense models; for MoE expert weights use --n-cpu-moe)",
