@@ -1,6 +1,7 @@
 import pytest
 import requests
 import socket
+import threading
 from utils import *
 
 server = ServerPreset.tinyllama2()
@@ -143,3 +144,32 @@ def test_server_model_aliases_and_tags():
     assert set(model["tags"]) == {"chat", "fim", "small"}
     # id is derived from first alias (alphabetical order from std::set)
     assert model["id"] == "code"
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_server_stop_with_open_request(stream: bool):
+    # SIGTERM must not wait for a client that is still connected
+    global server
+    server.n_predict = -1
+    server.enable_ctx_shift = True
+    server.server_slots = True
+    server.start()
+
+    def send():
+        try:
+            with requests.post(server.make_url("/completion"), json={"prompt": "I believe", "n_predict": -1, "stream": stream}, stream=stream, timeout=60) as res:
+                for _ in res.iter_lines():
+                    pass
+        except requests.exceptions.RequestException:
+            pass
+
+    thread = threading.Thread(target=send, daemon=True)
+    thread.start()
+    for _ in range(100):
+        if any(slot["is_processing"] for slot in server.make_request("GET", "/slots").body):
+            break
+        time.sleep(0.1)
+
+    assert server.process is not None
+    server.process.terminate()
+    server.process.wait(timeout=10)
