@@ -288,6 +288,7 @@ struct server_slot {
     common_chat_input generated;
     std::string  debug_generated_text;
     llama_tokens generated_tokens;
+    llama_tokens held_tokens; // sampled but not sent yet, text ends with incomplete UTF-8
     size_t n_sent_text = 0; // number of sent text character (i.e. handle partial UTF-8 on streaming)
 
     std::vector<completion_token_output> generated_token_probs;
@@ -394,6 +395,7 @@ struct server_slot {
             spec_ckpt.clear();
         }
         generated_tokens.clear();
+        held_tokens.clear();
         generated_token_probs.clear();
         json_schema = json();
 
@@ -2016,6 +2018,7 @@ private:
 
         if (incomplete) {
             slot.has_next_token = true;
+            slot.held_tokens.push_back(result.tok);
         }
 
         // if context shifting is disabled, make sure that we don't run out of context
@@ -2196,7 +2199,9 @@ private:
             res->is_begin = true;
         } else {
             res->content = slot.generated.substr(slot.n_sent_text - tkn.text_to_send.size(), tkn.text_to_send.size());
-            res->tokens.assign(1, tkn.tok);
+            res->tokens  = std::move(slot.held_tokens);
+            res->tokens.push_back(tkn.tok);
+            slot.held_tokens.clear();
         }
 
         res->n_decoded             = slot.stats.n_gen;
@@ -2235,10 +2240,10 @@ private:
             slot.debug_generated_text = slot.generated.text;
         }
 
-        // in stream mode, content and tokens are already in last partial chunk
+        // in stream mode, content and tokens are already in last partial chunk, except tokens held for incomplete UTF-8
         if (slot.task->params.stream) {
             res->content     = {};
-            res->tokens      = llama_tokens{};
+            res->tokens      = std::move(slot.held_tokens);
         } else {
             res->content     = std::move(slot.generated);
             res->tokens      = std::move(slot.generated_tokens);

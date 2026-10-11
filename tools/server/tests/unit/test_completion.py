@@ -93,6 +93,30 @@ def test_completion_stream_vs_non_stream():
     assert content_stream == res_non_stream.body["content"]
 
 
+@pytest.mark.parametrize("n_predict", [3, 4, 6])
+def test_completion_stream_tokens_incomplete_utf8(n_predict: int):
+    global server
+    server.start()
+    # the grammar forces a character that the model emits as 3 byte tokens
+    data = {
+        "n_predict": n_predict,
+        "prompt": "Once",
+        "grammar": 'root ::= "\u20ac"+',
+        "temperature": 0.0,
+        "return_tokens": True,
+    }
+    res_non_stream = server.make_request("POST", "/completion", data=data)
+    assert res_non_stream.status_code == 200
+    assert len(res_non_stream.body["tokens"]) == n_predict
+    res_stream = server.make_stream_request("POST", "/completion", data={**data, "stream": True})
+    tokens_stream = []
+    for chunk in res_stream:
+        tokens_stream += chunk["tokens"]
+        if chunk["stop"]:
+            assert chunk["tokens_predicted"] == n_predict
+    assert tokens_stream == res_non_stream.body["tokens"]
+
+
 def test_completion_with_openai_library():
     global server
     server.start()
